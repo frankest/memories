@@ -1,4 +1,4 @@
-name: memories_dev
+name: memories_debug
 
 volumes:
   config:
@@ -16,23 +16,23 @@ services:
       - config:/var/www/html/config:rw
       - data:/var/www/html/data:rw
     environment:
-      - TZ=America/Los_Angeles
+      - TZ=Europe/Berlin
       - MYSQL_PASSWORD=nextcloud
       - MYSQL_DATABASE=nextcloud
       - MYSQL_USER=nextcloud
       - MYSQL_HOST=db
       - REDIS_HOST=redis
-      - OVERWRITEPROTOCOL=https
+      - OVERWRITEPROTOCOL=http
       - PHP_MEMORY_LIMIT=1G
       - PHP_UPLOAD_LIMIT=1G
       - DEBIAN_FRONTEND=noninteractive
     ports:
-      - 80:80
-      - 8080:8080
+      - "127.0.0.1:8088:80"
+      - "127.0.0.1:8089:8080"
 
   db:
     image: mariadb:11
-    restart: always
+    restart: unless-stopped
     pull_policy: always
     command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW --log_bin_trust_function_creators=1
     volumes:
@@ -47,10 +47,10 @@ services:
 
   adminer:
     image: adminer
-    restart: always
+    restart: unless-stopped
     network_mode: service:nextcloud
 
   redis:
     image: redis:alpine
     pull_policy: always
-    restart: always
+    restart: unless-stopped

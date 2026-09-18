@@ -28,3 +28,18 @@ Note: Nextcloud automatically caches app assets (including javascript) based on 
 1. Change the version number in `appinfo/info.xml`
 2. Build the app using `make watch-js` (or `make build-js`/`make build-js-production` for a static build)
 3. Inform nextcloud of the upgrade via `sudo -E -u www-data php /var/www/html/occ upgrade`
+## Local WSL debugging
+
+Open this checkout in WSL, then use **Dev Containers: Reopen in Container**.
+The first start installs dependencies and initializes a separate Nextcloud.
+Use http://localhost:8088 (admin / admin); Adminer is on http://localhost:8089.
+These ports are bound to loopback. The Compose project is named memories_debug.
+
+In a container terminal, run `make watch-js` and leave it running.
+For PHP debugging, select **Listen for Xdebug (container)** and press F5.
+Set a breakpoint in a Memories controller and request its route with
+`XDEBUG_SESSION_START=memories` as a query parameter. Xdebug connects to the
+debug adapter inside the same container; port 9003 is not published.
+
+PHP tests use `make php-test`; type checking uses `make js-lint`.
+The default credentials are for this local development instance only.
