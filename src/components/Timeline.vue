@@ -4,20 +4,27 @@
     ref="container"
     match=".recycler"
     :refresh="softRefreshSync"
-    :allowSwipe="allowSwipe"
+    :allowSwipe="allowSwipe && !editingAlbumOrder"
     :state="state"
   >
     <!-- Loading indicator -->
-    <XLoadingIcon class="loading-icon centered" v-if="loading" />
+    <XLoadingIcon class="loading-icon centered" v-if="loading && !editingAlbumOrder" />
 
     <!-- Static top matter -->
-    <TopMatter ref="topmatter" />
+    <TopMatter ref="topmatter" v-show="!editingAlbumOrder" />
+    <AlbumOrderEditor
+      v-if="editingAlbumOrder"
+      :album="String($route.params.user) + '/' + String($route.params.name)"
+      :album-name="String($route.params.name)"
+      @close="closeAlbumOrder"
+    />
 
     <!-- No content found and nothing is loading -->
-    <EmptyContent v-if="showEmpty" />
+    <EmptyContent v-if="showEmpty && !editingAlbumOrder" />
 
     <!-- Top overlay showing date -->
     <TimelineTopOverlay
+      v-if="!isManualAlbumOrder && !editingAlbumOrder"
       ref="topOverlay"
       :heads="heads"
       :container="refs().container?.$el"
@@ -27,6 +34,7 @@
     <!-- Main recycler view for rows -->
     <RecycleScroller
       ref="recycler"
+      v-show="!editingAlbumOrder"
       class="recycler hide-scrollbar"
       tabindex="1"
       :class="{ empty }"
@@ -79,7 +87,7 @@
     <!-- Managers -->
     <ScrollerManager
       ref="scrollerManager"
-      v-show="!showEmpty"
+      v-show="!showEmpty && !isManualAlbumOrder && !editingAlbumOrder"
       :rows="list"
       :fullHeight="scrollerHeight"
       :recycler="refs().recycler"
@@ -93,6 +101,7 @@
 
     <SelectionManager
       ref="selectionManager"
+      v-show="!editingAlbumOrder"
       :heads="heads"
       :rows="list"
       :isreverse="isMonthView"
@@ -113,6 +122,7 @@ import { showError } from '@nextcloud/dialogs';
 
 import { getLayout } from '@services/layout';
 
+import AlbumOrderEditor from '@components/AlbumOrderEditor.vue';
 import UserConfig from '@mixins/UserConfig';
 import RowHead from '@components/frame/RowHead.vue';
 import Photo from '@components/frame/Photo.vue';
@@ -144,6 +154,7 @@ export default defineComponent({
   name: 'Timeline',
 
   components: {
+    AlbumOrderEditor,
     RowHead,
     Photo,
     EmptyContent,
@@ -165,6 +176,7 @@ export default defineComponent({
   },
 
   data: () => ({
+    editingAlbumOrder: false,
     /** Loading days response */
     loading: 0,
     /** Main list of rows */
@@ -239,6 +251,7 @@ export default defineComponent({
   },
 
   created() {
+    utils.bus.on('memories:album-order:edit', this.editAlbumOrder);
     utils.bus.on('memories:user-config-changed', this.softRefresh);
     utils.bus.on('files:file:created', this.softRefresh);
     utils.bus.on('memories:window:resize', this.handleResizeWithDelay);
@@ -249,6 +262,7 @@ export default defineComponent({
   },
 
   beforeUnmount() {
+    utils.bus.off('memories:album-order:edit', this.editAlbumOrder);
     utils.bus.off('memories:user-config-changed', this.softRefresh);
     utils.bus.off('files:file:created', this.softRefresh);
     utils.bus.off('memories:window:resize', this.handleResizeWithDelay);
@@ -265,7 +279,12 @@ export default defineComponent({
       return this.routeIsBase && nativex.has();
     },
 
+    isManualAlbumOrder(): boolean {
+      return (this.routeIsAlbums || this.routeIsAlbumShare) && !!this.heads.get(0)?.day.manualOrder;
+    },
+
     isMonthView(): boolean {
+      if (this.isManualAlbumOrder) return false;
       if (this.$route.query.sort === 'timeline') return false;
       if (this.$route.query.sort === 'album') return true;
       return (
@@ -307,6 +326,7 @@ export default defineComponent({
     async routeChange(to: RouteLocationNormalized, from?: RouteLocationNormalized) {
       // Always do a hard refresh if the path changes
       if (from?.path !== to.path) {
+        this.editingAlbumOrder = false;
         await this.refresh();
 
         // Focus on the recycler (e.g. after navigation click)
@@ -319,7 +339,7 @@ export default defineComponent({
       }
 
       // Check if viewer is supposed to be open
-      if (from?.hash !== to.hash && !_m.viewer.isOpen && utils.fragment.viewer) {
+      if (!this.editingAlbumOrder && from?.hash !== to.hash && !_m.viewer.isOpen && utils.fragment.viewer) {
         // Open viewer
         const [dayidStr, key] = utils.fragment.viewer.args;
         const dayid = parseInt(dayidStr);
@@ -347,6 +367,19 @@ export default defineComponent({
 
         _m.viewer.openDynamic(photo, this);
       }
+    },
+
+    editAlbumOrder() {
+      if (!this.routeIsAlbums || !this.$route.params.name || this.editingAlbumOrder) return;
+      this.refs().selectionManager.clear();
+      this.editingAlbumOrder = true;
+    },
+
+    async closeAlbumOrder(saved: boolean) {
+      this.editingAlbumOrder = false;
+      await this.$nextTick();
+      if (saved) await this.refresh();
+      else this.handleResizeWithDelay();
     },
 
     updateLoading(delta: number): void {
@@ -841,7 +874,8 @@ export default defineComponent({
         };
 
         // Mark month view to change the header title
-        if (this.isMonthView) head.ismonth = true;
+        if (day.manualOrder) head.name = this.t('memories', 'Manual order');
+        else if (this.isMonthView) head.ismonth = true;
 
         // Special headers
         if (this.routeIsThisDay && (!prevDay || Math.abs(prevDay.dayid - day.dayid) > 30)) {

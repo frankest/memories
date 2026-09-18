@@ -209,11 +209,22 @@ final class AlbumsQuery
     public function userIsCollaborator(string $uid, int $albumId): bool
     {
         $query = $this->connection->getQueryBuilder();
-        $ids = $this->getSelfCollaborators($uid);
+        $allowed = [$query->expr()->andX(
+            $query->expr()->eq('collaborator_type', $query->createNamedParameter(0, IQueryBuilder::PARAM_INT)),
+            $query->expr()->eq('collaborator_id', $query->createNamedParameter($uid)),
+        )];
+        $user = \OC::$server->get(\OCP\IUserManager::class)->get($uid);
+        $groups = $user ? \OC::$server->get(\OCP\IGroupManager::class)->getUserGroupIds($user) : [];
+        if ($groups) {
+            $allowed[] = $query->expr()->andX(
+                $query->expr()->eq('collaborator_type', $query->createNamedParameter(1, IQueryBuilder::PARAM_INT)),
+                $query->expr()->in('collaborator_id', $query->createNamedParameter($groups, IQueryBuilder::PARAM_STR_ARRAY)),
+            );
+        }
         $query->select('album_id')->from($this->collaboratorsTable())->where(
             $query->expr()->andX(
                 $query->expr()->eq('album_id', $query->createNamedParameter($albumId, IQueryBuilder::PARAM_INT)),
-                $query->expr()->in('collaborator_id', $query->createNamedParameter($ids, IQueryBuilder::PARAM_STR_ARRAY)),
+                $query->expr()->orX(...$allowed),
             ),
         );
 

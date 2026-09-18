@@ -86,6 +86,10 @@ export class API {
     return tok(gen(`${BASE}/folders/sub`));
   }
 
+  static ALBUM_ORDER(albums: string) {
+    return API.Q(gen(BASE + '/album-order'), { albums });
+  }
+
   static ALBUM_LIST() {
     return gen(`${BASE}/clusters/albums`);
   }

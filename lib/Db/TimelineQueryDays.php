@@ -171,6 +171,27 @@ trait TimelineQueryDays
         return $day;
     }
 
+    /** Caller must authorize access to the album before requesting its files. */
+    public function getAlbumOrderPhotos(int $albumId): array
+    {
+        $q = $this->connection->getQueryBuilder();
+        $q->select(SQL::distinct($q, 'm.fileid'), ...TimelineQuery::TIMELINE_SELECT)
+            ->from('memories', 'm')
+            ->innerJoin('m', 'photos_albums_files', 'paf', $q->expr()->eq('paf.file_id', 'm.fileid'))
+            ->innerJoin('m', 'filecache', 'f', $q->expr()->eq('f.fileid', 'm.fileid'))
+            ->innerJoin('f', 'mimetypes', 'mimetypes', $q->expr()->eq('mimetypes.id', 'f.mimetype'))
+            ->where($q->expr()->eq('paf.album_id', $q->createNamedParameter($albumId, IQueryBuilder::PARAM_INT)))
+            ->orderBy('m.datetaken', 'ASC')->addOrderBy('basename', 'ASC')->addOrderBy('m.fileid', 'ASC')
+        ;
+        $this->addFavoriteTag($q);
+        $photos = $q->executeQuery()->fetchAll();
+        foreach ($photos as &$photo) {
+            $this->postProcessDayPhoto($photo);
+        }
+
+        return $photos;
+    }
+
     public function executeQueryWithCTEs(IQueryBuilder $query, string $psql = ''): \OCP\DB\IResult
     {
         $sql = empty($psql) ? $query->getSQL() : $psql;

@@ -37,6 +37,12 @@ final class DaysController extends GenericApiController
     public function days(): Http\Response
     {
         return Util::guardEx(function () {
+            if ($album = $this->request->getParam('albums')) {
+                $manual = \OC::$server->get(\OCA\Memories\Service\AlbumOrder::class)->timeline((string) $album);
+                if (null !== $manual) {
+                    return new JSONResponse($manual);
+                }
+            }
             $list = $this->tq->getDays(
                 $this->isRecursive(),
                 $this->isArchive(),
@@ -60,6 +66,12 @@ final class DaysController extends GenericApiController
     public function day(array $dayIds): Http\Response
     {
         return Util::guardEx(function () use ($dayIds) {
+            if ($album = $this->request->getParam('albums')) {
+                $manual = \OC::$server->get(\OCA\Memories\Service\AlbumOrder::class)->timeline((string) $album, $dayIds);
+                if (null !== $manual) {
+                    return new JSONResponse($manual);
+                }
+            }
             // Run actual query
             $list = $this->tq->getDay(
                 $dayIds,

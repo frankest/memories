@@ -1,6 +1,7 @@
 OC.L10N.register(
     "memories",
     {
+    "Sort mode" : "Sortiermodus",
     "Shared Link" : "Geteilter Link",
     "Download" : "Herunterladen",
     "Memories" : "Memories",

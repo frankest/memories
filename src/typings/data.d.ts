@@ -20,6 +20,7 @@ declare module '@typings' {
   };
 
   export type IDay = {
+    manualOrder?: boolean;
     /** Day ID */
     dayid: number;
     /** Number of photos in this day */

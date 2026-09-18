@@ -3,6 +3,7 @@ import type { FragmentName, Fragment } from './fragment';
 import type { IConfig, IPhoto } from '@typings';
 
 export type BusEvent = {
+  'memories:album-order:edit': null;
   /** Open/close the navigation drawer */
   'toggle-navigation': { open: boolean };
   /** File was created */

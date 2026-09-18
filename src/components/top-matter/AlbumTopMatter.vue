@@ -9,7 +9,11 @@
 
     <div class="name">{{ name }}</div>
 
-    <div class="right-actions">
+    <div class="right-actions album-actions">
+      <NcButton v-if="!isAlbumList" variant="secondary" @click="editOrder()">
+        <template #icon><SortIcon :size="20" /></template>
+        {{ t('memories', 'Sort mode') }}
+      </NcButton>
       <NcActions v-if="isAlbumList" :title="t('memories', 'Sorting order')" :forceMenu="true">
         <template #icon>
           <template v-if="isDateSort">
@@ -146,6 +150,7 @@
 import { defineComponent } from 'vue';
 
 import UserConfig from '@mixins/UserConfig';
+import NcButton from '@nextcloud/vue/components/NcButton';
 import NcActions from '@nextcloud/vue/components/NcActions';
 import NcActionButton from '@nextcloud/vue/components/NcActionButton';
 import NcActionCheckbox from '@nextcloud/vue/components/NcActionCheckbox';
@@ -176,6 +181,7 @@ import SortDateDIcon from 'vue-material-design-icons/SortCalendarDescending.vue'
 export default defineComponent({
   name: 'AlbumTopMatter',
   components: {
+    NcButton,
     NcActions,
     NcActionButton,
     NcActionCheckbox,
@@ -248,6 +254,10 @@ export default defineComponent({
       };
     },
 
+    editOrder() {
+      utils.bus.emit('memories:album-order:edit', null);
+    },
+
     back() {
       this.$router.go(-1);
     },
@@ -284,3 +294,11 @@ export default defineComponent({
   },
 });
 </script>
+
+<style scoped>
+.album-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+</style>
