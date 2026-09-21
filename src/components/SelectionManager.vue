@@ -77,6 +77,21 @@ const TOUCH_SELECT_CLAMP = {
   bufferPx: 5, // number of pixels to clamp inside recycler area
 };
 
+/**
+ * Maximum pointer movement (in px) between press and release
+ * for the gesture to count as a click instead of a drag.
+ */
+const MAX_CLICK_MOVE = 8;
+
+/** Pointer press awaiting a release, to distinguish click from drag */
+type IPendingClick = {
+  photo: IPhoto;
+  rowIdx: number;
+  pointerId: number;
+  x: number;
+  y: number;
+};
+
 class Selection extends Map<string, IPhoto> {
   addBy(photo: IPhoto): this {
     console.assert(!!photo?.key, 'SelectionManager::addBy encountered a photo without a key');
@@ -118,6 +133,8 @@ class Selection extends Map<string, IPhoto> {
     return new Selection(this);
   }
 }
+
+export type { Selection };
 
 type ISelectionAction = {
   /** Identifier (optional) */
@@ -192,6 +209,7 @@ export default defineComponent({
     touchScrollDelta: 0,
     touchMoveSelFrame: 0,
     multiSelectDelta: null as 1 | -1 | null,
+    pendingClick: null as IPendingClick | null,
   }),
 
   mounted() {
@@ -310,6 +328,11 @@ export default defineComponent({
     // Unsubscribe from global events
     utils.bus.off('memories:albums:update', this.clear);
     utils.bus.off('memories:fragment:pop:selection', this.clear);
+
+    // Drop any pending click
+    this.pendingClick = null;
+    document.removeEventListener('pointerup', this.pointerUpPhoto);
+    document.removeEventListener('pointercancel', this.cancelPendingClick);
   },
 
   watch: {
@@ -371,11 +394,58 @@ export default defineComponent({
       }
     },
 
-    /** Clicking on photo */
+    /**
+     * Pressing on a photo.
+     *
+     * The action is deferred to pointer release so that dragging
+     * (e.g. reordering or moving to a folder) does not open the viewer.
+     */
     clickPhoto(photo: IPhoto, event: PointerEvent | null, rowIdx: number) {
       if (photo.flag & this.c.FLAG_PLACEHOLDER) return;
       if (event?.pointerType === 'touch') return; // let touch events handle this
       if (event?.pointerType === 'mouse' && event?.button !== 0) return; // only left click for mouse
+
+      // Without a pointer event (e.g. tap) act immediately
+      if (!event) {
+        this.openPhoto(photo, null, rowIdx);
+        return;
+      }
+
+      // Overwrite any pending press (e.g. multi-touch)
+      this.cancelPendingClick();
+      this.pendingClick = {
+        photo,
+        rowIdx,
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+      };
+      document.addEventListener('pointerup', this.pointerUpPhoto, { passive: true });
+      document.addEventListener('pointercancel', this.cancelPendingClick, { passive: true });
+    },
+
+    /** Release of a press on a photo */
+    pointerUpPhoto(event: PointerEvent) {
+      const pending = this.pendingClick;
+      if (!pending || event.pointerId !== pending.pointerId) return;
+      this.cancelPendingClick();
+
+      // Moved too far: this was a drag, not a click
+      if (Math.hypot(event.clientX - pending.x, event.clientY - pending.y) > MAX_CLICK_MOVE) return;
+
+      this.openPhoto(pending.photo, event, pending.rowIdx);
+    },
+
+    /** Drop the pending click, if any */
+    cancelPendingClick() {
+      this.pendingClick = null;
+      document.removeEventListener('pointerup', this.pointerUpPhoto);
+      document.removeEventListener('pointercancel', this.cancelPendingClick);
+    },
+
+    /** Open the viewer or select the photo, depending on selection and modifiers */
+    openPhoto(photo: IPhoto, event: PointerEvent | null, rowIdx: number) {
+      if (photo.flag & this.c.FLAG_PLACEHOLDER) return;
 
       if (!this.empty() || event?.ctrlKey || event?.shiftKey) {
         this.clickSelectionIcon(photo, event, rowIdx);

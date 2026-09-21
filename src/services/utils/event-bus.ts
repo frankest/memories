@@ -3,7 +3,10 @@ import type { FragmentName, Fragment } from './fragment';
 import type { IConfig, IPhoto } from '@typings';
 
 export type BusEvent = {
-  'memories:album-order:edit': null;
+  /** Manual order state of the album in the current view */
+  'memories:album-order:state': { manual: boolean };
+  /** Enable the manual order of the current album */
+  'memories:album-order:enable': null;
   /** Open/close the navigation drawer */
   'toggle-navigation': { open: boolean };
   /** File was created */
@@ -44,6 +47,12 @@ export type BusEvent = {
     current: number;
     previous: number;
     dynTopMatterVisible: boolean;
+  };
+
+  /** Photos dragged from the timeline grid onto a folder tile */
+  'memories:timeline:drop-photos': {
+    folder: import('@typings').IFolder;
+    fileIds: number[];
   };
 
   /** Albums were updated for these photos */

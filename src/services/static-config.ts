@@ -169,10 +169,12 @@ class StaticConfig {
       folders_path: String(),
       show_hidden_folders: false,
       sort_folder_month: false,
+      sort_folder_order: 'date' as const,
 
       // album settings
       sort_album_month: true,
       show_hidden_albums: false,
+      sort_album_order: 'date' as const,
       album_list_sort: ALBUM_SORT_FLAGS.CREATED | ALBUM_SORT_FLAGS.DESCENDING, // also in OtherController.php
 
       // local settings

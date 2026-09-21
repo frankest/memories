@@ -100,7 +100,10 @@ final class AlbumOrder
         }
     }
 
-    public function save(string $identifier, array $fileIds, string $revision, bool $manual): void
+    /**
+     * Store a new order and return the revision to use for the next change.
+     */
+    public function save(string $identifier, array $fileIds, string $revision, bool $manual): string
     {
         $album = $this->resolve($identifier, true);
         $state = $this->state($album);
@@ -133,6 +136,19 @@ final class AlbumOrder
                 $this->conflict();
             }
         }
+
+        return $this->state($album)['revision'];
+    }
+
+    /** Remove the stored order of an album, restoring its default date order. */
+    public function reset(string $identifier): void
+    {
+        $album = $this->resolve($identifier, true);
+        $q = $this->connection->getQueryBuilder();
+        $q->delete('memories_album_order')
+            ->where($q->expr()->eq('album_id', $q->createNamedParameter((int) $album['album_id'], IQueryBuilder::PARAM_INT)))
+            ->executeStatement()
+        ;
     }
 
     /** null preserves the existing chronological timeline for unconfigured albums. */

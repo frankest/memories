@@ -4,8 +4,13 @@
     class="folder fill-block"
     :class="{
       [`folder--${sanitizedName}`]: true,
+      'drop-target': dropActive,
     }"
     :to="target"
+    @dragenter="dragEnter"
+    @dragover="dragOver"
+    @dragleave="dragLeave"
+    @drop="drop"
   >
     <div class="big-icon top-left fill-block">
       <FolderIcon class="icon" />
@@ -50,6 +55,15 @@ export default defineComponent({
     },
   },
 
+  emits: {
+    dropPhotos: (fileIds: number[]) => true,
+  },
+
+  data: () => ({
+    dropActive: false,
+    dropDepth: 0,
+  }),
+
   computed: {
     /** Open folder */
     target() {
@@ -85,6 +99,44 @@ export default defineComponent({
   },
 
   methods: {
+    /** Whether the dragged payload comes from the Memories timeline */
+    isPhotoDrag(event: DragEvent): boolean {
+      return !!event.dataTransfer?.types.includes('application/x-memories-photos');
+    },
+
+    dragEnter(event: DragEvent) {
+      if (!this.isPhotoDrag(event)) return;
+      event.preventDefault();
+      this.dropDepth++;
+      this.dropActive = true;
+    },
+
+    dragOver(event: DragEvent) {
+      if (!this.isPhotoDrag(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+      this.dropActive = true;
+    },
+
+    dragLeave(event: DragEvent) {
+      if (!this.isPhotoDrag(event)) return;
+      this.dropDepth = Math.max(0, this.dropDepth - 1);
+      if (this.dropDepth === 0) this.dropActive = false;
+    },
+
+    drop(event: DragEvent) {
+      this.dropDepth = 0;
+      this.dropActive = false;
+      if (!this.isPhotoDrag(event)) return;
+      event.preventDefault();
+      try {
+        const fileIds = JSON.parse(event.dataTransfer?.getData('application/x-memories-photos') ?? '[]');
+        if (Array.isArray(fileIds) && fileIds.length) this.$emit('dropPhotos', fileIds);
+      } catch {
+        // ignore malformed payloads
+      }
+    },
+
     /** Get preview url */
     previewUrl(info: IPhoto) {
       return utils.getPreviewUrl({
@@ -99,6 +151,12 @@ export default defineComponent({
 <style lang="scss" scoped>
 .folder {
   cursor: pointer;
+}
+
+.folder.drop-target {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+  border-radius: 10px;
 }
 
 .big-icon {

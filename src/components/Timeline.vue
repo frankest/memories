@@ -4,27 +4,21 @@
     ref="container"
     match=".recycler"
     :refresh="softRefreshSync"
-    :allowSwipe="allowSwipe && !editingAlbumOrder"
+    :allowSwipe="allowSwipe"
     :state="state"
   >
     <!-- Loading indicator -->
-    <XLoadingIcon class="loading-icon centered" v-if="loading && !editingAlbumOrder" />
+    <XLoadingIcon class="loading-icon centered" v-if="loading" />
 
     <!-- Static top matter -->
-    <TopMatter ref="topmatter" v-show="!editingAlbumOrder" />
-    <AlbumOrderEditor
-      v-if="editingAlbumOrder"
-      :album="String($route.params.user) + '/' + String($route.params.name)"
-      :album-name="String($route.params.name)"
-      @close="closeAlbumOrder"
-    />
+    <TopMatter ref="topmatter" />
 
     <!-- No content found and nothing is loading -->
-    <EmptyContent v-if="showEmpty && !editingAlbumOrder" />
+    <EmptyContent v-if="showEmpty" />
 
     <!-- Top overlay showing date -->
     <TimelineTopOverlay
-      v-if="!isManualAlbumOrder && !editingAlbumOrder"
+      v-if="!isFlatOrder"
       ref="topOverlay"
       :heads="heads"
       :container="refs().container?.$el"
@@ -34,7 +28,6 @@
     <!-- Main recycler view for rows -->
     <RecycleScroller
       ref="recycler"
-      v-show="!editingAlbumOrder"
       class="recycler hide-scrollbar"
       tabindex="1"
       :class="{ empty }"
@@ -67,6 +60,10 @@
             class="photo top-left"
             v-for="photo of item.photos ?? []"
             :key="photo.key"
+            :class="{
+              'drop-before': dropTargetFileId === photo.fileid && !dropAfter,
+              'drop-after': dropTargetFileId === photo.fileid && dropAfter,
+            }"
             :style="{
               height: `${photo.dispH}px`,
               width: `${photo.dispW}px`,
@@ -74,11 +71,16 @@
             }"
             :data="photo"
             :day="item.day"
+            :draggable="isPhotoDraggable"
             @select="refs().selectionManager.clickSelectionIcon(photo, $event, index)"
             @pointerdown="refs().selectionManager.clickPhoto(photo, $event, index)"
             @touchstart="refs().selectionManager.touchstartPhoto(photo, $event, index)"
             @touchend="refs().selectionManager.touchendPhoto(photo, $event, index)"
             @touchmove="refs().selectionManager.touchmovePhoto(photo, $event, index)"
+            @dragstart="photoDragStart(photo, $event)"
+            @dragend="photoDragEnd"
+            @dragover="photoDragOver(photo, $event)"
+            @drop="photoDrop(photo, $event)"
           />
         </template>
       </template>
@@ -87,7 +89,7 @@
     <!-- Managers -->
     <ScrollerManager
       ref="scrollerManager"
-      v-show="!showEmpty && !isManualAlbumOrder && !editingAlbumOrder"
+      v-show="!showEmpty && !isFlatOrder"
       :rows="list"
       :fullHeight="scrollerHeight"
       :recycler="refs().recycler"
@@ -101,7 +103,6 @@
 
     <SelectionManager
       ref="selectionManager"
-      v-show="!editingAlbumOrder"
       :heads="heads"
       :rows="list"
       :isreverse="isMonthView"
@@ -118,14 +119,14 @@ import type { RouteLocationNormalized } from 'vue-router';
 import { RecycleScroller } from 'vue-virtual-scroller';
 
 import axios from '@nextcloud/axios';
-import { showError } from '@nextcloud/dialogs';
+import { showError, showUndo } from '@nextcloud/dialogs';
 
 import { getLayout } from '@services/layout';
 
-import AlbumOrderEditor from '@components/AlbumOrderEditor.vue';
 import UserConfig from '@mixins/UserConfig';
 import RowHead from '@components/frame/RowHead.vue';
 import Photo from '@components/frame/Photo.vue';
+import type { Selection } from '@components/SelectionManager.vue';
 import ScrollerManager from '@components/ScrollerManager.vue';
 import SelectionManager from '@components/SelectionManager.vue';
 import Viewer from '@components/viewer/Viewer.vue';
@@ -140,10 +141,12 @@ import XLoadingIcon from '@components/XLoadingIcon.vue';
 import * as dav from '@services/dav';
 import * as utils from '@services/utils';
 import * as nativex from '@native';
+import * as albumOrder from '@services/album-order';
 
-import { API, DaysFilterType } from '@services/API';
+import { API, DaysFilterType, DaysSortType } from '@services/API';
 
-import type { IDay, IHeadRow, IPhoto, IPhotoRow, IRow } from '@typings';
+import type { AlbumOrderState } from '@services/album-order';
+import type { IDay, IFolder, IHeadRow, IPhoto, IPhotoRow, IRow, SortOrderSetting } from '@typings';
 
 const SCROLL_LOAD_DELAY = 100; // Delay in loading data when scrolling
 const DESKTOP_ROW_HEIGHT = 200; // Height of row on desktop
@@ -154,7 +157,6 @@ export default defineComponent({
   name: 'Timeline',
 
   components: {
-    AlbumOrderEditor,
     RowHead,
     Photo,
     EmptyContent,
@@ -176,7 +178,6 @@ export default defineComponent({
   },
 
   data: () => ({
-    editingAlbumOrder: false,
     /** Loading days response */
     loading: 0,
     /** Main list of rows */
@@ -221,6 +222,20 @@ export default defineComponent({
 
     /** State for request cancellations */
     state: Math.random(),
+
+    /** HTML5 drag state for timeline photos */
+    dragFileIds: [] as number[],
+    dragSource: null as 'folder' | 'album' | null,
+    dropTargetFileId: 0,
+    /** Whether the dragged photos are dropped after the target */
+    dropAfter: false,
+
+    /** Album whose order state is loaded below */
+    albumOrderId: '',
+    /** Pending request for the order of the current album */
+    albumOrderRequest: null as Promise<AlbumOrderState | null> | null,
+    /** An album order change is being saved */
+    savingOrder: false,
   }),
 
   mounted() {
@@ -238,6 +253,9 @@ export default defineComponent({
     // like :recycler="refs().recycler" evaluated during the initial render
     // stay undefined. Re-render once now that all refs are populated.
     this.$forceUpdate();
+
+    // The top matter needs the current state of the album order
+    utils.bus.emit('memories:album-order:state', { manual: this.isManualAlbumOrder });
   },
 
   unmounted() {
@@ -248,10 +266,15 @@ export default defineComponent({
     async $route(to: RouteLocationNormalized, from?: RouteLocationNormalized) {
       await this.routeChange(to, from);
     },
+
+    /** Keep the top matter informed about the order of this album */
+    isManualAlbumOrder(manual: boolean) {
+      utils.bus.emit('memories:album-order:state', { manual });
+    },
   },
 
   created() {
-    utils.bus.on('memories:album-order:edit', this.editAlbumOrder);
+    utils.bus.on('memories:album-order:enable', this.enableManualOrder);
     utils.bus.on('memories:user-config-changed', this.softRefresh);
     utils.bus.on('files:file:created', this.softRefresh);
     utils.bus.on('memories:window:resize', this.handleResizeWithDelay);
@@ -259,10 +282,11 @@ export default defineComponent({
     utils.bus.on('memories:timeline:deleted', this.deleteFromViewWithAnimation);
     utils.bus.on('memories:timeline:soft-refresh', this.softRefresh);
     utils.bus.on('memories:timeline:hard-refresh', this.refresh);
+    utils.bus.on('memories:timeline:drop-photos', this.dropPhotosOnFolder);
   },
 
   beforeUnmount() {
-    utils.bus.off('memories:album-order:edit', this.editAlbumOrder);
+    utils.bus.off('memories:album-order:enable', this.enableManualOrder);
     utils.bus.off('memories:user-config-changed', this.softRefresh);
     utils.bus.off('files:file:created', this.softRefresh);
     utils.bus.off('memories:window:resize', this.handleResizeWithDelay);
@@ -270,6 +294,7 @@ export default defineComponent({
     utils.bus.off('memories:timeline:deleted', this.deleteFromViewWithAnimation);
     utils.bus.off('memories:timeline:soft-refresh', this.softRefresh);
     utils.bus.off('memories:timeline:hard-refresh', this.refresh);
+    utils.bus.off('memories:timeline:drop-photos', this.dropPhotosOnFolder);
     this.resetState();
     this.state = 0;
   },
@@ -283,14 +308,81 @@ export default defineComponent({
       return (this.routeIsAlbums || this.routeIsAlbumShare) && !!this.heads.get(0)?.day.manualOrder;
     },
 
+    /** Whether the photos of this album can be reordered */
+    canReorderAlbum(): boolean {
+      return this.routeIsAlbums && !this.routeIsPublic && !!this.$route.params.name;
+    },
+
+    /** Album identifier used by the album order API */
+    albumIdentifier(): string {
+      const user = this.$route.params.user?.toString();
+      const name = this.$route.params.name?.toString();
+      return user && name ? `${user}/${name}` : String();
+    },
+
+    /** Config key holding the sort order of the current view */
+    sortConfigKey(): 'sort_folder_order' | 'sort_album_order' | null {
+      if (this.routeIsAlbums || this.routeIsAlbumShare) return 'sort_album_order';
+      if (this.routeIsFolders || this.routeIsFolderShare) return 'sort_folder_order';
+      return null;
+    },
+
+    /** Explicit sort order override, empty for the view default */
+    sortOverride(): SortOrderSetting | 'manual' {
+      const key = this.sortConfigKey;
+      return (key ? this.config[key] : '') as SortOrderSetting | 'manual';
+    },
+
+    /** Sort order for the current view */
+    sortOrder(): DaysSortType {
+      switch (this.sortOverride) {
+        case 'date':
+          return DaysSortType.DATE;
+        case 'date-asc':
+          return DaysSortType.DATE_ASC;
+        case 'name':
+          return DaysSortType.NAME;
+        case 'name-desc':
+          return DaysSortType.NAME_DESC;
+        default:
+          // View default: month view is ascending, timeline descending
+          return this.isMonthView ? DaysSortType.DATE_ASC : DaysSortType.DATE;
+      }
+    },
+
+    /** Whether the flat listing without date headers is requested */
+    isFlatOrderSetting(): boolean {
+      return this.sortOverride === 'name' || this.sortOverride === 'name-desc';
+    },
+
+    /** Whether the server returned a flat listing without date headers */
+    isNameOrder(): boolean {
+      return !!this.heads.get(0)?.day.nameOrder;
+    },
+
+    /** Whether the view is shown without date headers */
+    isFlatOrder(): boolean {
+      return this.isManualAlbumOrder || this.isNameOrder;
+    },
+
+    /** HTML5 drag of timeline photos is available in folder and album views */
+    isPhotoDraggable(): boolean {
+      return this.routeIsFolders || this.routeIsFolderShare || this.canReorderAlbum;
+    },
+
     isMonthView(): boolean {
-      if (this.isManualAlbumOrder) return false;
+      if (this.isFlatOrderSetting) return false;
       if (this.$route.query.sort === 'timeline') return false;
       if (this.$route.query.sort === 'album') return true;
       return (
         (this.config.sort_album_month && (this.routeIsAlbums || this.routeIsAlbumShare)) ||
         (this.config.sort_folder_month && this.routeIsFolders)
       );
+    },
+
+    /** Whether the date order is ascending */
+    isReverse(): boolean {
+      return this.isMonthView || this.sortOrder === DaysSortType.DATE_ASC;
     },
 
     /** Nothing to show here */
@@ -326,7 +418,6 @@ export default defineComponent({
     async routeChange(to: RouteLocationNormalized, from?: RouteLocationNormalized) {
       // Always do a hard refresh if the path changes
       if (from?.path !== to.path) {
-        this.editingAlbumOrder = false;
         await this.refresh();
 
         // Focus on the recycler (e.g. after navigation click)
@@ -339,7 +430,7 @@ export default defineComponent({
       }
 
       // Check if viewer is supposed to be open
-      if (!this.editingAlbumOrder && from?.hash !== to.hash && !_m.viewer.isOpen && utils.fragment.viewer) {
+      if (from?.hash !== to.hash && !_m.viewer.isOpen && utils.fragment.viewer) {
         // Open viewer
         const [dayidStr, key] = utils.fragment.viewer.args;
         const dayid = parseInt(dayidStr);
@@ -369,17 +460,272 @@ export default defineComponent({
       }
     },
 
-    editAlbumOrder() {
-      if (!this.routeIsAlbums || !this.$route.params.name || this.editingAlbumOrder) return;
-      this.refs().selectionManager.clear();
-      this.editingAlbumOrder = true;
+    /** Find a loaded photo object by file id in the current rows */
+    findPhotoByFileId(fileId: number): IPhoto | null {
+      for (const row of this.list) {
+        for (const photo of row.photos ?? []) {
+          if (photo.fileid === fileId) return photo;
+        }
+      }
+      return null;
     },
 
-    async closeAlbumOrder(saved: boolean) {
-      this.editingAlbumOrder = false;
-      await this.$nextTick();
-      if (saved) await this.refresh();
-      else this.handleResizeWithDelay();
+    /** Photos carried by the current HTML5 drag (selection or single photo) */
+    draggedPhotos(photo: IPhoto): IPhoto[] {
+      const selection = this.refs().selectionManager.selection as Selection;
+      if (selection?.size && selection.hasBy(photo)) {
+        const seen = new Set<number>();
+        return [...selection.values()].filter((p) => (seen.has(p.fileid) ? false : (seen.add(p.fileid), true)));
+      }
+      return [photo];
+    },
+
+    /** Whether the payload is a Memories photo drag started in this view */
+    isPhotoDragEvent(event: DragEvent): boolean {
+      return !!event.dataTransfer?.types.includes('application/x-memories-photos');
+    },
+
+    /** Start dragging a timeline photo (Files-app behavior: no open on drop on itself) */
+    photoDragStart(photo: IPhoto, event: DragEvent) {
+      if (!this.isPhotoDraggable) return;
+      this.refs().selectionManager.cancelPendingClick();
+      const photos = this.draggedPhotos(photo);
+      event.dataTransfer?.setData('application/x-memories-photos', JSON.stringify(photos.map((p) => p.fileid)));
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+      this.dragFileIds = photos.map((p) => p.fileid);
+      this.dragSource = this.canReorderAlbum ? 'album' : 'folder';
+
+      // Fetch the stored order while the user is dragging
+      if (this.dragSource === 'album') void this.loadAlbumOrder();
+    },
+
+    /** End the current photo drag */
+    photoDragEnd() {
+      this.dragFileIds = [];
+      this.dragSource = null;
+      this.dropTargetFileId = 0;
+      this.dropAfter = false;
+    },
+
+    /** Whether the pointer is in the second half of the photo below it */
+    isDroppedAfter(event: DragEvent): boolean {
+      const target = (event.currentTarget ?? event.target) as HTMLElement | null;
+      const el = target?.closest<HTMLElement>('.p-outer-super') ?? target;
+      if (!el) return false;
+
+      const rect = el.getBoundingClientRect();
+      const after = event.clientX > rect.left + rect.width / 2;
+      return getComputedStyle(el).direction === 'rtl' ? !after : after;
+    },
+
+    /** Allow dropping dragged photos onto another photo */
+    photoDragOver(photo: IPhoto, event: DragEvent) {
+      if (!this.isPhotoDragEvent(event) || !this.dragFileIds.length) return;
+      // Files app: dropped onto itself opens the file; never a move target here
+      if (this.dragFileIds.length === 1 && this.dragFileIds[0] === photo.fileid) {
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+        return;
+      }
+      if (this.dragSource !== 'album') return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+      this.dropTargetFileId = photo.fileid;
+      this.dropAfter = this.isDroppedAfter(event);
+    },
+
+    /** Handle a photo dropped onto another photo */
+    async photoDrop(photo: IPhoto, event: DragEvent) {
+      if (!this.isPhotoDragEvent(event) || !this.dragFileIds.length) return;
+      event.preventDefault();
+      const moved = [...this.dragFileIds];
+      const source = this.dragSource;
+      const after = this.dropAfter;
+      this.photoDragEnd();
+
+      if (moved.length === 1 && moved[0] === photo.fileid) {
+        // Files-app behavior: dropping a file onto itself opens it
+        const target = this.findPhotoByFileId(photo.fileid) ?? photo;
+        this.refs().selectionManager.openPhoto(target, null, 0);
+        return;
+      }
+
+      if (source === 'album') await this.movePhotosInAlbum(moved, photo.fileid, after);
+      // Folder-to-folder drops are handled by the folder tiles (dropPhotosOnFolder)
+    },
+
+    /** Photos dropped on a subfolder tile: move them into that folder */
+    async dropPhotosOnFolder({ folder, fileIds }: { folder: IFolder; fileIds: number[] }) {
+      if (!fileIds.length) return;
+      if (!this.routeIsFolders && !this.routeIsFolderShare) return;
+      if (this.routeIsPublic) return;
+
+      const photos = fileIds.map((fileId) => this.findPhotoByFileId(fileId)).filter((p): p is IPhoto => !!p);
+      if (!photos.length) return;
+
+      const currentPath = utils.getFolderRoutePath(this.config.folders_path);
+      const destination = `${currentPath}/${folder.name}`.replaceAll(/\/\/+/g, '/');
+      if (photos.every((p) => p.imageInfo?.filename?.startsWith(destination + '/'))) return;
+
+      const confirm = await utils.dialogs.moveItems(photos.length);
+      if (!confirm) return;
+
+      this.updateLoading(1);
+      try {
+        for await (const _ of dav.movePhotos(photos, destination, false)) {
+          // progress is shown by the move modal; refresh once done
+        }
+      } finally {
+        this.updateLoading(-1);
+      }
+      this.refs().selectionManager.clear();
+      await this.refresh();
+    },
+
+    /**
+     * Get the stored order of the current album.
+     *
+     * Reordering starts from this order because the grid can hide photos
+     * (stacked RAW files and identical duplicates).
+     */
+    loadAlbumOrder(): Promise<AlbumOrderState | null> {
+      const album = this.albumIdentifier;
+      if (!album) return Promise.resolve(null);
+
+      // Forget the order of a previously shown album
+      if (this.albumOrderId !== album) {
+        this.albumOrderId = album;
+        this.albumOrderRequest = null;
+      }
+
+      this.albumOrderRequest ??= albumOrder.getAlbumOrder(album).catch((e) => {
+        console.warn('Failed to load album order:', e);
+        return null;
+      });
+
+      return this.albumOrderRequest;
+    },
+
+    /** Enable the manual order of this album, starting from its date order */
+    async enableManualOrder() {
+      if (!this.canReorderAlbum || this.savingOrder) return;
+
+      const state = await this.loadAlbumOrder();
+      if (!state) {
+        showError(this.t('memories', 'Could not change the order of this album.'));
+        return;
+      }
+
+      // Store the current order if this album does not use a manual order yet
+      if (!state.manual && !(await this.storeAlbumOrder(state, state.fileIds))) return;
+
+      await this.setSortOrder('manual');
+      await this.refresh();
+    },
+
+    /** Move photos to another position in the album (drag and drop) */
+    async movePhotosInAlbum(moved: number[], anchor: number, after: boolean) {
+      if (!this.canReorderAlbum || this.savingOrder || moved.includes(anchor)) return;
+
+      const state = await this.loadAlbumOrder();
+      if (!state) {
+        showError(this.t('memories', 'Could not change the order of this album.'));
+        return;
+      }
+
+      const previous = state.fileIds;
+      const next = albumOrder.moveInAlbumOrder(previous, moved, anchor, after);
+      if (previous.every((id, i) => id === next[i])) return;
+
+      // Show the new order right away if the grid shows the stored order
+      const manual = this.showsStoredAlbumOrder();
+      const revert = manual ? this.applyLocalAlbumOrder(next) : null;
+
+      if (!(await this.storeAlbumOrder(state, next))) {
+        revert?.();
+        return;
+      }
+
+      if (!manual) {
+        // The album switches to the manual order
+        await this.setSortOrder('manual');
+        await this.refresh();
+        return;
+      }
+
+      showUndo(this.t('memories', 'Album order updated'), async () => {
+        const undo = this.applyLocalAlbumOrder(previous);
+        if (!(await this.storeAlbumOrder(state, previous))) undo?.();
+      });
+    },
+
+    /**
+     * Store an order for the current album.
+     * @returns Whether the order was stored
+     */
+    async storeAlbumOrder(state: AlbumOrderState, fileIds: number[]): Promise<boolean> {
+      this.savingOrder = true;
+      try {
+        state.revision = await albumOrder.saveAlbumOrder(this.albumIdentifier, fileIds, state.revision);
+        state.fileIds = fileIds;
+        state.manual = true;
+        return true;
+      } catch (e) {
+        this.onAlbumOrderError(e);
+        return false;
+      } finally {
+        this.savingOrder = false;
+      }
+    },
+
+    /** Whether the grid shows the stored order of the album */
+    showsStoredAlbumOrder(): boolean {
+      return this.isManualAlbumOrder && !!this.heads.get(0)?.day?.detail;
+    },
+
+    /**
+     * Show the given order in the grid.
+     * @returns Function that restores the previous order, null if not possible
+     */
+    applyLocalAlbumOrder(fileIds: number[]): (() => void) | null {
+      const day = this.showsStoredAlbumOrder() ? this.heads.get(0)!.day : null;
+      if (!day?.detail) return null;
+
+      const positions = new Map(fileIds.map((id, i) => [id, i] as const));
+      const before = [...day.detail];
+      const revert = () => this.processDay(day.dayid, before);
+      const after = [...before].sort((a, b) => (positions.get(a.fileid) ?? 0) - (positions.get(b.fileid) ?? 0));
+
+      if (after.every((p, i) => p === before[i])) return revert;
+      this.processDay(day.dayid, after);
+      return revert;
+    },
+
+    /** Store the sort order of the current view in the user configuration */
+    async setSortOrder(order: SortOrderSetting | 'manual') {
+      const key = this.sortConfigKey;
+      if (!key || this.sortOverride === order) return;
+
+      (this.config as unknown as Record<string, string>)[key] = order;
+      await this.updateSetting(key, key === 'sort_album_order' ? 'sortAlbumOrder' : 'sortFolderOrder');
+    },
+
+    /** Handle a failed album order change */
+    onAlbumOrderError(error: unknown) {
+      // The change was based on a stale order: reload the current state
+      if ((error as { response?: { status?: number } })?.response?.status === 409) {
+        showError(this.t('memories', 'The album changed in the meantime. Reloading it now.'));
+        this.resetAlbumOrderState();
+        void this.refresh();
+        return;
+      }
+
+      showError(this.t('memories', 'Could not change the order of this album.'));
+    },
+
+    /** Forget the order that is cached for the current album */
+    resetAlbumOrderState() {
+      this.albumOrderId = '';
+      this.albumOrderRequest = null;
     },
 
     updateLoading(delta: number): void {
@@ -427,6 +773,7 @@ export default defineComponent({
       this.loadedDays.clear();
       this.sizedDays.clear();
       this.fetchDayQueue = [];
+      this.resetAlbumOrderState();
       window.clearTimeout(this.fetchDayTimer ?? 0);
       window.clearTimeout(this.resizeTimer ?? 0);
     },
@@ -736,7 +1083,17 @@ export default defineComponent({
       // Month view
       if (this.isMonthView) {
         set(DaysFilterType.MONTH_VIEW);
+      }
+
+      // Sort order (reverse only applies to the date order)
+      if (this.isReverse) {
         set(DaysFilterType.REVERSE);
+      }
+      if (this.isFlatOrderSetting) {
+        set(
+          DaysFilterType.SORT,
+          this.sortOrder === DaysSortType.NAME_DESC ? DaysSortType.NAME_DESC : DaysSortType.NAME,
+        );
       }
 
       return query;
@@ -875,7 +1232,12 @@ export default defineComponent({
 
         // Mark month view to change the header title
         if (day.manualOrder) head.name = this.t('memories', 'Manual order');
-        else if (this.isMonthView) head.ismonth = true;
+        else if (day.nameOrder) {
+          head.name =
+            this.sortOrder === DaysSortType.NAME_DESC
+              ? this.t('memories', 'Name (Z-A)')
+              : this.t('memories', 'Name (A-Z)');
+        } else if (this.isMonthView) head.ismonth = true;
 
         // Special headers
         if (this.routeIsThisDay && (!prevDay || Math.abs(prevDay.dayid - day.dayid) > 30)) {
@@ -1593,6 +1955,28 @@ export default defineComponent({
     width 0.2s ease-in-out,
     height 0.2s ease-in-out,
     transform 0.2s ease-in-out; // reflow
+
+  /** Position where dragged photos are inserted */
+  &::after {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    width: 4px;
+    opacity: 0;
+    z-index: 400;
+    pointer-events: none;
+    background-color: var(--color-primary);
+  }
+
+  &.drop-before::after {
+    opacity: 1;
+    inset-inline-start: 0;
+  }
+
+  &.drop-after::after {
+    opacity: 1;
+    inset-inline-end: 0;
+  }
 }
 
 /** Dynamic top matter */

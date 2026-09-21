@@ -118,6 +118,22 @@ final class AlbumOrderTest extends TestCase
             $state = $order->state($album);
             $order->save($identifier, array_column($state['photos'], 'fileid'), $state['revision'], false);
             self::assertNull($order->timeline($identifier));
+
+            // Saving returns the revision to use for the next change
+            $state = $order->state($album);
+            $ids = array_column($state['photos'], 'fileid');
+            $next = $order->save($identifier, [$ids[1], $ids[0]], $state['revision'], true);
+            self::assertSame([$ids[1], $ids[0]], array_column($order->state($album)['photos'], 'fileid'));
+            self::assertSame([$ids[1], $ids[0]], array_column($order->timeline($identifier)[0]['detail'], 'fileid'));
+            $order->save($identifier, $ids, $next, true); // returned revision is accepted
+
+            // Resetting removes the stored order and restores the date order
+            $current = $visitor;
+            $this->assertDenied(static fn () => $order->reset($identifier), 404);
+            $current = $collaborator;
+            $order->reset($identifier);
+            self::assertNull($order->stored($albumId));
+            self::assertNull($order->timeline($identifier));
         } finally {
             if (null !== $albumId) {
                 $mapper->delete($albumId);

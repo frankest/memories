@@ -1,6 +1,13 @@
 OC.L10N.register(
     "memories",
     {
+    "Reset order" : "Reihenfolge zurücksetzen",
+    "Reset order?" : "Reihenfolge zurücksetzen?",
+    "The album will be shown in the default order, based on the date the photos were taken." : "Das Album wird wieder in der Standardreihenfolge nach Aufnahmedatum angezeigt.",
+    "Could not change the order of this album." : "Die Reihenfolge des Albums konnte nicht geändert werden.",
+    "Could not reset the order of this album." : "Die Reihenfolge des Albums konnte nicht zurückgesetzt werden.",
+    "The album changed in the meantime. Reloading it now." : "Das Album wurde zwischenzeitlich geändert. Es wird jetzt neu geladen.",
+    "Album order updated" : "Reihenfolge des Albums aktualisiert",
     "Sort mode" : "Sortiermodus",
     "Shared Link" : "Geteilter Link",
     "Download" : "Herunterladen",

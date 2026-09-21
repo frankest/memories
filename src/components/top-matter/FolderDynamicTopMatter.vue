@@ -1,5 +1,5 @@
 <template>
-  <FolderGrid v-if="show" :items="folders" />
+  <FolderGrid v-if="show" :items="folders" @dropPhotos="dropPhotos" />
 </template>
 
 <script lang="ts">
@@ -13,6 +13,7 @@ import { getLanguage } from '@nextcloud/l10n';
 import FolderGrid from './FolderGrid.vue';
 
 import * as utils from '@services/utils';
+
 import { API } from '@services/API';
 
 import type { IFolder } from '@typings';
@@ -40,6 +41,12 @@ export default defineComponent({
   methods: {
     folder(): string {
       return utils.getFolderRoutePath(this.config.folders_path);
+    },
+
+    /** Handle photos dropped on a subfolder tile: move them there */
+    dropPhotos(folder: IFolder, fileIds: number[]) {
+      if (!fileIds.length) return;
+      utils.bus.emit('memories:timeline:drop-photos', { folder, fileIds });
     },
 
     async refresh(): Promise<boolean> {

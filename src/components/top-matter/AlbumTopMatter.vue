@@ -10,10 +10,11 @@
     <div class="name">{{ name }}</div>
 
     <div class="right-actions album-actions">
-      <NcButton v-if="!isAlbumList" variant="secondary" @click="editOrder()">
-        <template #icon><SortIcon :size="20" /></template>
-        {{ t('memories', 'Sort mode') }}
+      <NcButton v-if="showResetOrder" variant="secondary" @click="resetOrder()">
+        <template #icon><UndoIcon :size="20" /></template>
+        {{ t('memories', 'Reset order') }}
       </NcButton>
+      <ViewSortMenu v-if="!isAlbumList" setting="sort_album_order" :manual="true" />
       <NcActions v-if="isAlbumList" :title="t('memories', 'Sorting order')" :forceMenu="true">
         <template #icon>
           <template v-if="isDateSort">
@@ -158,10 +159,13 @@ import NcActionRadio from '@nextcloud/vue/components/NcActionRadio';
 import NcActionSeparator from '@nextcloud/vue/components/NcActionSeparator';
 
 import axios from '@nextcloud/axios';
+import { showError } from '@nextcloud/dialogs';
 
 import AlbumCreateModal from '@components/modal/AlbumCreateModal.vue';
 import AlbumDeleteModal from '@components/modal/AlbumDeleteModal.vue';
+import ViewSortMenu from './ViewSortMenu.vue';
 
+import * as albumOrderApi from '@services/album-order';
 import { downloadWithHandle } from '@services/dav';
 import { API } from '@services/API';
 import * as utils from '@services/utils';
@@ -173,6 +177,7 @@ import DeleteIcon from 'vue-material-design-icons/TrashCanOutline.vue';
 import PlusIcon from 'vue-material-design-icons/Plus.vue';
 import ShareIcon from 'vue-material-design-icons/ShareVariant.vue';
 import SortIcon from 'vue-material-design-icons/SortVariant.vue';
+import UndoIcon from 'vue-material-design-icons/Undo.vue';
 import SlotAlphabeticalAIcon from 'vue-material-design-icons/SortAlphabeticalAscending.vue';
 import SlotAlphabeticalDIcon from 'vue-material-design-icons/SortAlphabeticalDescending.vue';
 import SortDateAIcon from 'vue-material-design-icons/SortCalendarAscending.vue';
@@ -190,6 +195,7 @@ export default defineComponent({
 
     AlbumCreateModal,
     AlbumDeleteModal,
+    ViewSortMenu,
 
     BackIcon,
     DownloadIcon,
@@ -198,6 +204,7 @@ export default defineComponent({
     PlusIcon,
     ShareIcon,
     SortIcon,
+    UndoIcon,
     SlotAlphabeticalAIcon,
     SlotAlphabeticalDIcon,
     SortDateAIcon,
@@ -206,9 +213,27 @@ export default defineComponent({
 
   mixins: [UserConfig],
 
+  data: () => ({
+    /** Whether the album is currently shown in manual order */
+    manualOrder: false,
+  }),
+
+  created() {
+    utils.bus.on('memories:album-order:state', this.onAlbumOrderState);
+  },
+
+  beforeUnmount() {
+    utils.bus.off('memories:album-order:state', this.onAlbumOrderState);
+  },
+
   computed: {
     isAlbumList(): boolean {
       return !this.$route.params.name?.toString();
+    },
+
+    /** Offer to remove the manual order of this album */
+    showResetOrder(): boolean {
+      return !this.isAlbumList && this.manualOrder;
     },
 
     canEditAlbum(): boolean {
@@ -254,8 +279,41 @@ export default defineComponent({
       };
     },
 
-    editOrder() {
-      utils.bus.emit('memories:album-order:edit', null);
+    /** The timeline reports whether the album uses a manual order */
+    onAlbumOrderState({ manual }: utils.BusEvent['memories:album-order:state']) {
+      this.manualOrder = !!manual;
+    },
+
+    /** Identifier of the album in the current view */
+    albumId(): string {
+      const user = this.$route.params.user?.toString();
+      const name = this.$route.params.name?.toString();
+      return user && name ? `${user}/${name}` : String();
+    },
+
+    /** Remove the manual order of the album */
+    async resetOrder() {
+      const album = this.albumId();
+      if (!album) return;
+
+      const confirm = await utils.dialogs.resetAlbumOrder();
+      if (!confirm) return;
+
+      try {
+        await albumOrderApi.resetAlbumOrder(album);
+      } catch {
+        showError(this.t('memories', 'Could not reset the order of this album.'));
+        return;
+      }
+
+      // Fall back to the default date order of this view
+      const fallback = this.config.sort_album_month ? 'date-asc' : 'date';
+      if (this.config.sort_album_order !== fallback) {
+        this.config.sort_album_order = fallback;
+        await this.updateSetting('sort_album_order', 'sortAlbumOrder');
+      }
+
+      utils.bus.emit('memories:timeline:hard-refresh', null);
     },
 
     back() {

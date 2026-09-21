@@ -21,13 +21,24 @@ final class AlbumOrderController extends Controller
     }
 
     #[NoAdminRequired]
-    public function show(string $albums): Response
+    public function show(string $albums, bool $ids = false): Response
     {
-        return Util::guardEx(function () use ($albums) {
+        return Util::guardEx(function () use ($albums, $ids) {
             $state = $this->order->state($this->order->resolve($albums, true));
-            unset($state['memberships'], $state['storedRevision']);
 
-            return new JSONResponse($state);
+            /** @var array<string, mixed> $response */
+            $response = [
+                'manual' => $state['manual'],
+                'revision' => $state['revision'],
+            ];
+            // Only the order itself is needed for reordering in the timeline
+            if ($ids) {
+                $response['fileIds'] = array_column($state['photos'], 'fileid');
+            } else {
+                $response['photos'] = $state['photos'];
+            }
+
+            return new JSONResponse($response);
         });
     }
 
@@ -35,7 +46,17 @@ final class AlbumOrderController extends Controller
     public function save(string $albums, array $fileIds, string $revision, bool $manual = true): Response
     {
         return Util::guardEx(function () use ($albums, $fileIds, $revision, $manual) {
-            $this->order->save($albums, $fileIds, $revision, $manual);
+            return new JSONResponse([
+                'revision' => $this->order->save($albums, $fileIds, $revision, $manual),
+            ]);
+        });
+    }
+
+    #[NoAdminRequired]
+    public function reset(string $albums): Response
+    {
+        return Util::guardEx(function () use ($albums) {
+            $this->order->reset($albums);
 
             return new JSONResponse([]);
         });

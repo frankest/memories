@@ -1,22 +1,31 @@
 # Manual album order
 
-In an existing album, choose **Sort mode**. The editor appears directly
-in the album content area, without a dialog. Images do not open while editing.
-Drag photos into order with a mouse or touch; dragging near the top or bottom
-edge scrolls the grid. A line marks the insertion position. Alternatively,
-use the arrow buttons (also available with Alt+Left/Right on a focused tile).
-Choose **Save order** to publish the order for everyone viewing this album in
-Memories. **Cancel** leaves the stored order unchanged.
+In an existing album, choose **Manual order** in the sorting menu. The grid
+stays the same, except that the photos are shown without date headers, in the
+order stored for this album.
+
+Drag one or more photos to another position to change the order. With multiple
+photos selected (selection icon, Ctrl/Shift click or touch selection), the whole
+selection is moved together. The new order is stored immediately for everyone
+viewing this album in Memories; a toast offers to undo the change.
+
+**Reset order** in the album header removes the stored order, so the album is
+shown in the default date order again. The button only appears while the album
+is displayed in manual order.
 
 Owners and user/group collaborators may edit. Public link visitors can only
 view the saved order. The separate Nextcloud Photos app does not use this order.
 
 New album memberships appear at the end. Removing and adding the same file again
-also places it at the end. Each album has its own order. **Restore date order**
-returns the album to the existing chronological view.
+also places it at the end. Each album has its own order.
 
-If the album or its order changed while the editor was open, saving is rejected;
-choose **Reload album** to load the current state and reorder again.
+If the album or its order changed while the view was open (e.g. on another
+device), the change is rejected and the view is reloaded to show the current
+state.
+
+Reordering starts from the order stored on the server, because the grid can hide
+photos (stacked RAW files and identical duplicates). Those hidden photos keep
+their place.
 
 ## Development
 
@@ -36,3 +45,7 @@ loads it only if present, while always bootstrapping Nextcloud itself.
 The manual view loads the album metadata as one group. Thumbnails are loaded
 lazily and the timeline remains virtualized, but very large albums require
 proportionally more metadata memory. No automated browser tests have been run.
+
+Drag and drop uses native HTML5 drag events, so reordering requires a mouse or
+pen; touch devices cannot reorder photos yet.
+

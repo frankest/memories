@@ -43,6 +43,7 @@ return [
         // API Routes
         ['name' => 'AlbumOrder#show', 'url' => '/api/album-order', 'verb' => 'GET'],
         ['name' => 'AlbumOrder#save', 'url' => '/api/album-order', 'verb' => 'PUT'],
+        ['name' => 'AlbumOrder#reset', 'url' => '/api/album-order', 'verb' => 'DELETE'],
         ['name' => 'Days#days', 'url' => '/api/days', 'verb' => 'GET'],
         ['name' => 'Days#day', 'url' => '/api/days', 'verb' => 'POST'],
         ['name' => 'Days#dayGet', 'url' => '/api/days/{id}', 'verb' => 'GET'],

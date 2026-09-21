@@ -191,4 +191,12 @@ export const dialogs = {
       confirm: t('memories', 'Continue'),
       cancel: t('memories', 'Cancel'),
     }),
+
+  resetAlbumOrder: () =>
+    confirmDestructive({
+      title: t('memories', 'Reset order?'),
+      message: t('memories', 'The album will be shown in the default order, based on the date the photos were taken.'),
+      confirm: t('memories', 'Reset order'),
+      cancel: t('memories', 'Cancel'),
+    }),
 };

@@ -48,12 +48,17 @@
       <div
         class="img-outer fill-block"
         :class="{ 'memories-livephoto': data.liveid }"
+        :draggable="draggable ? 'true' : 'false'"
         @contextmenu="contextmenu"
         @pointerdown.passive="$emit('pointerdown', $event)"
         @touchstart.passive="$emit('touchstart', $event)"
         @touchmove="$emit('touchmove', $event)"
         @touchend.passive="$emit('touchend', $event)"
         @touchcancel.passive="$emit('touchend', $event)"
+        @dragstart="$emit('dragstart', $event)"
+        @dragend="$emit('dragend', $event)"
+        @dragover="$emit('dragover', $event)"
+        @drop="$emit('drop', $event)"
       >
         <XImg
           v-if="src"
@@ -120,6 +125,10 @@ export default defineComponent({
       type: Object as PropType<IDay>,
       required: true,
     },
+    draggable: {
+      type: Boolean,
+      default: false,
+    },
   },
 
   emits: {
@@ -128,6 +137,10 @@ export default defineComponent({
     touchstart: (e: TouchEvent) => true,
     touchmove: (e: TouchEvent) => true,
     touchend: (e: TouchEvent) => true,
+    dragstart: (e: DragEvent) => true,
+    dragend: (e: DragEvent) => true,
+    dragover: (e: DragEvent) => true,
+    drop: (e: DragEvent) => true,
   },
 
   data: () => ({

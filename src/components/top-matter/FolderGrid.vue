@@ -1,7 +1,7 @@
 <template>
   <div class="grid">
     <div class="item fill-block" v-for="item of items" :key="item.fileid">
-      <Folder :data="item" />
+      <Folder :data="item" @dropPhotos="$emit('dropPhotos', item, $event)" />
     </div>
   </div>
 </template>
@@ -28,6 +28,10 @@ export default defineComponent({
       type: Array<IFolder>,
       required: true,
     },
+  },
+
+  emits: {
+    dropPhotos: (folder: IFolder, fileIds: number[]) => true,
   },
 });
 </script>

@@ -43,6 +43,16 @@ final class DaysController extends GenericApiController
                     return new JSONResponse($manual);
                 }
             }
+
+            // Flat listing sorted by name, without date grouping
+            if (null !== $this->nameOrder()) {
+                return new JSONResponse($this->tq->getFlatDays(
+                    $this->isRecursive(),
+                    $this->isArchive(),
+                    $this->getTransformations(),
+                ), Http::STATUS_OK);
+            }
+
             $list = $this->tq->getDays(
                 $this->isRecursive(),
                 $this->isArchive(),
@@ -72,6 +82,16 @@ final class DaysController extends GenericApiController
                     return new JSONResponse($manual);
                 }
             }
+            // Flat listing sorted by name, without date grouping
+            if (null !== ($desc = $this->nameOrder())) {
+                return new JSONResponse(
+                    \in_array(0, $dayIds, true)
+                        ? $this->tq->getFlatDay($this->isRecursive(), $this->isArchive(), $this->isHidden(), $desc, $this->getTransformations())
+                        : [],
+                    Http::STATUS_OK,
+                );
+            }
+
             // Run actual query
             $list = $this->tq->getDay(
                 $dayIds,
@@ -226,5 +246,18 @@ final class DaysController extends GenericApiController
     private function isReverse(): bool
     {
         return null !== $this->request->getParam('reverse');
+    }
+
+    /**
+     * Whether to sort by name instead of date, and in which direction.
+     * Returns null if name sorting is not requested.
+     */
+    private function nameOrder(): ?bool
+    {
+        return match ($this->request->getParam('sort')) {
+            'name' => false,
+            'nameDesc' => true,
+            default => null,
+        };
     }
 }
