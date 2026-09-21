@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- **Feature**: Reorder album photos with drag and drop directly in the album grid, including multiple selected photos. The order is stored immediately for all viewers and can be undone. A "Reset order" button restores the default date order.
+- **Feature**: New sort menu for folder and album views: newest or oldest first and by file name (A-Z / Z-A), remembered per view.
+- **Feature**: Move photos to folders by dragging them from the timeline onto a folder in the folder view.
 - **Feature**: Direct play for browser-supported video codecs via codec detection.
 - **Feature**: Support multiple external transcoders with automatic load distribution.
 
