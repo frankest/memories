@@ -75,7 +75,7 @@ final class AlbumOrder
 
         return [
             'manual' => $manual,
-            'revision' => hash('sha256', ($stored['revision'] ?? '').json_encode($memberships, JSON_THROW_ON_ERROR).json_encode(array_column($photos, 'fileid'), JSON_THROW_ON_ERROR)),
+            'revision' => self::computeRevision($stored['revision'] ?? '', $memberships, array_column($photos, 'fileid')),
             'photos' => $photos,
             'memberships' => $memberships,
             'storedRevision' => $stored['revision'] ?? null,
@@ -113,10 +113,11 @@ final class AlbumOrder
         self::validate($fileIds, array_column($state['photos'], 'fileid'));
         $items = array_map(static fn (int $id): int => $state['memberships'][$id], $fileIds);
         $q = $this->connection->getQueryBuilder();
+        $next = bin2hex(random_bytes(16));
         $values = [
             'album_id' => $q->createNamedParameter((int) $album['album_id'], IQueryBuilder::PARAM_INT),
             'items' => $q->createNamedParameter(json_encode($items, JSON_THROW_ON_ERROR)),
-            'revision' => $q->createNamedParameter(bin2hex(random_bytes(16))),
+            'revision' => $q->createNamedParameter($next),
             'manual' => $q->createNamedParameter($manual, IQueryBuilder::PARAM_BOOL),
         ];
         if (null === $state['storedRevision']) {
@@ -137,7 +138,7 @@ final class AlbumOrder
             }
         }
 
-        return $this->state($album)['revision'];
+        return self::computeRevision($next, $state['memberships'], $fileIds);
     }
 
     /** Remove the stored order of an album, restoring its default date order. */
@@ -169,6 +170,12 @@ final class AlbumOrder
         }
 
         return $photos ? [['dayid' => 0, 'count' => \count($photos), 'manualOrder' => true, 'detail' => $photos]] : [];
+    }
+
+    /** The revision binds the stored order revision, the membership map and the photo order. */
+    private static function computeRevision(string $storedRevision, array $memberships, array $fileIds): string
+    {
+        return hash('sha256', $storedRevision.json_encode($memberships, JSON_THROW_ON_ERROR).json_encode($fileIds, JSON_THROW_ON_ERROR));
     }
 
     private function conflict(): never
