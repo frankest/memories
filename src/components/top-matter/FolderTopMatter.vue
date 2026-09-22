@@ -54,6 +54,8 @@
           </template>
         </NcActionButton>
       </NcActions>
+
+      <ViewSortMenu setting="sort_folder_order" />
     </div>
   </div>
 </template>
@@ -68,6 +70,7 @@ import NcBreadcrumb from '@nextcloud/vue/components/NcBreadcrumb';
 import NcActions from '@nextcloud/vue/components/NcActions';
 import NcActionButton from '@nextcloud/vue/components/NcActionButton';
 import PublicUploadHandler from '@components/upload/PublicUploadHandler.vue';
+import ViewSortMenu from './ViewSortMenu.vue';
 
 import * as utils from '@services/utils';
 import * as nativex from '@native';
@@ -87,6 +90,7 @@ export default defineComponent({
     NcActions,
     NcActionButton,
     PublicUploadHandler,
+    ViewSortMenu,
     HomeIcon,
     ShareIcon,
     TimelineIcon,

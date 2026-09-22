@@ -140,9 +140,11 @@ final class OtherController extends GenericApiController
                 'folders_path' => $getAppConfig('foldersPath', '/'),
                 'show_hidden_folders' => 'true' === $getAppConfig('showHidden', 'false'),
                 'sort_folder_month' => 'true' === $getAppConfig('sortFolderMonth', 'false'),
+                'sort_folder_order' => $getAppConfig('sortFolderOrder', 'date'),
 
                 // album settings
                 'sort_album_month' => 'true' === $getAppConfig('sortAlbumMonth', 'true'),
+                'sort_album_order' => $getAppConfig('sortAlbumOrder', 'date'),
                 'show_hidden_albums' => 'true' === $getAppConfig('showHiddenAlbums', 'false'),
                 'album_list_sort' => (int) $getAppConfig('album_list_sort', '3'),
             ], Http::STATUS_OK);

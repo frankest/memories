@@ -35,6 +35,15 @@ export const enum DaysFilterType {
   REVERSE = 'reverse',
   HIDDEN = 'hidden',
   NO_PRELOAD = 'nopreload',
+  SORT = 'sort',
+}
+
+/** Name sorting values for the days API */
+export const enum DaysSortType {
+  DATE = 'date',
+  DATE_ASC = 'dateAsc',
+  NAME = 'name',
+  NAME_DESC = 'nameDesc',
 }
 
 export class API {

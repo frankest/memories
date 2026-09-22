@@ -18,6 +18,7 @@
 
     <!-- Top overlay showing date -->
     <TimelineTopOverlay
+      v-if="!isFlatOrder"
       ref="topOverlay"
       :heads="heads"
       :container="refs().container?.$el"
@@ -79,7 +80,7 @@
     <!-- Managers -->
     <ScrollerManager
       ref="scrollerManager"
-      v-show="!showEmpty"
+      v-show="!showEmpty && !isFlatOrder"
       :rows="list"
       :fullHeight="scrollerHeight"
       :recycler="refs().recycler"
@@ -131,10 +132,10 @@ import * as dav from '@services/dav';
 import * as utils from '@services/utils';
 import * as nativex from '@native';
 
-import { API, DaysFilterType } from '@services/API';
+import { API, DaysFilterType, DaysSortType } from '@services/API';
 import * as lens from '@services/lens';
 
-import type { IDay, IHeadRow, IPhoto, IPhotoRow, IRow } from '@typings';
+import type { IDay, IHeadRow, IPhoto, IPhotoRow, IRow, SortOrderSetting } from '@typings';
 
 const SCROLL_LOAD_DELAY = 100; // Delay in loading data when scrolling
 const DESKTOP_ROW_HEIGHT = 200; // Height of row on desktop
@@ -266,13 +267,59 @@ export default defineComponent({
       return this.routeIsBase && nativex.has();
     },
 
+    /** Config key holding the sort order of the current view */
+    sortConfigKey(): 'sort_folder_order' | 'sort_album_order' | null {
+      if (this.routeIsAlbums || this.routeIsAlbumShare) return 'sort_album_order';
+      if (this.routeIsFolders || this.routeIsFolderShare) return 'sort_folder_order';
+      return null;
+    },
+
+    /** Explicit sort order override, empty for the view default */
+    sortOverride(): SortOrderSetting {
+      const key = this.sortConfigKey;
+      return (key ? this.config[key] : '') as SortOrderSetting;
+    },
+
+    /** Sort order for the current view */
+    sortOrder(): DaysSortType {
+      switch (this.sortOverride) {
+        case 'date':
+          return DaysSortType.DATE;
+        case 'date-asc':
+          return DaysSortType.DATE_ASC;
+        case 'name':
+          return DaysSortType.NAME;
+        case 'name-desc':
+          return DaysSortType.NAME_DESC;
+        default:
+          // View default: month view is ascending, timeline descending
+          return this.isMonthView ? DaysSortType.DATE_ASC : DaysSortType.DATE;
+      }
+    },
+
+    /** Whether the flat listing without date headers is requested */
+    isFlatOrderSetting(): boolean {
+      return this.sortOverride === 'name' || this.sortOverride === 'name-desc';
+    },
+
+    /** Whether the server returned a flat listing without date headers */
+    isFlatOrder(): boolean {
+      return !!this.heads.get(0)?.day.nameOrder;
+    },
+
     isMonthView(): boolean {
+      if (this.isFlatOrderSetting) return false;
       if (this.$route.query.sort === 'timeline') return false;
       if (this.$route.query.sort === 'album') return true;
       return (
         (this.config.sort_album_month && (this.routeIsAlbums || this.routeIsAlbumShare)) ||
         (this.config.sort_folder_month && this.routeIsFolders)
       );
+    },
+
+    /** Whether the date order is ascending */
+    isReverse(): boolean {
+      return this.isMonthView || this.sortOrder === DaysSortType.DATE_ASC;
     },
 
     /** Nothing to show here */
@@ -707,7 +754,17 @@ export default defineComponent({
       // Month view
       if (this.isMonthView) {
         set(DaysFilterType.MONTH_VIEW);
+      }
+
+      // Sort order (reverse only applies to the date order)
+      if (this.isReverse) {
         set(DaysFilterType.REVERSE);
+      }
+      if (this.isFlatOrderSetting) {
+        set(
+          DaysFilterType.SORT,
+          this.sortOrder === DaysSortType.NAME_DESC ? DaysSortType.NAME_DESC : DaysSortType.NAME,
+        );
       }
 
       return query;
@@ -849,8 +906,13 @@ export default defineComponent({
           day: day,
         };
 
-        // Mark month view to change the header title
-        if (this.isMonthView) head.ismonth = true;
+        // Mark the flat listing to change the header title
+        if (day.nameOrder) {
+          head.name =
+            this.sortOrder === DaysSortType.NAME_DESC
+              ? this.t('memories', 'Name (Z-A)')
+              : this.t('memories', 'Name (A-Z)');
+        } else if (this.isMonthView) head.ismonth = true;
 
         // Special headers
         if (this.routeIsThisDay && (!prevDay || Math.abs(prevDay.dayid - day.dayid) > 30)) {

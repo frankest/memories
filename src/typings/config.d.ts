@@ -1,6 +1,12 @@
 declare module '@typings' {
   type HighResCond = 'always' | 'zoom' | 'never';
 
+  /** Sort order of a view, as sent to the days API */
+  export type SortOrder = 'date' | 'date-asc' | 'name' | 'name-desc';
+
+  /** Stored sort order of a view, empty when the view default is used */
+  export type SortOrderSetting = SortOrder | '';
+
   export type IConfig = {
     // general stuff
     version: string;
@@ -47,9 +53,11 @@ declare module '@typings' {
     folders_path: string;
     show_hidden_folders: boolean;
     sort_folder_month: boolean;
+    sort_folder_order: SortOrderSetting;
 
     // album settings
     sort_album_month: boolean;
+    sort_album_order: SortOrderSetting;
     show_hidden_albums: boolean;
 
     // local settings

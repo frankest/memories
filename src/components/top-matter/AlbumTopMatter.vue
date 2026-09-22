@@ -10,6 +10,7 @@
     <div class="name">{{ name }}</div>
 
     <div class="right-actions">
+      <ViewSortMenu v-if="!isAlbumList" setting="sort_album_order" />
       <NcActions v-if="isAlbumList" :title="t('memories', 'Sorting order')" :forceMenu="true">
         <template #icon>
           <template v-if="isDateSort">
@@ -156,6 +157,7 @@ import axios from '@nextcloud/axios';
 
 import AlbumCreateModal from '@components/modal/AlbumCreateModal.vue';
 import AlbumDeleteModal from '@components/modal/AlbumDeleteModal.vue';
+import ViewSortMenu from './ViewSortMenu.vue';
 
 import { downloadWithHandle } from '@services/dav';
 import { API } from '@services/API';
@@ -184,6 +186,7 @@ export default defineComponent({
 
     AlbumCreateModal,
     AlbumDeleteModal,
+    ViewSortMenu,
 
     BackIcon,
     DownloadIcon,

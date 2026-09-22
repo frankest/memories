@@ -20,6 +20,8 @@ declare module '@typings' {
   };
 
   export type IDay = {
+    /** Photos are sorted by name, without date grouping */
+    nameOrder?: boolean;
     /** Day ID */
     dayid: number;
     /** Number of photos in this day */

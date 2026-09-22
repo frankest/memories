@@ -172,6 +172,105 @@ trait TimelineQueryDays
     }
 
     /**
+     * Get the flat (non date-grouped) days response: a single pseudo-day
+     * with all files of the view, sorted by name.
+     *
+     * @param bool  $recursive       If the query should be recursive
+     * @param bool  $archive         If the query should include only the archive folder
+     * @param array $queryTransforms The query transformations to apply
+     *
+     * @return array The days response with a single entry (dayid 0)
+     */
+    public function getFlatDays(bool $recursive, bool $archive, array $queryTransforms = []): array
+    {
+        $query = $this->connection->getQueryBuilder();
+        $query->selectAlias($query->func()->count(SQL::distinct($query, 'm.fileid')), 'count')
+            ->from('memories', 'm')
+        ;
+
+        // Apply all transformations
+        $this->applyAllTransforms($queryTransforms, $query, true);
+
+        // FILTER with filecache for timeline path
+        $query = $this->filterFilecache($query, null, $recursive, $archive);
+
+        $count = (int) $this->executeQueryWithCTEs($query)->fetchOne();
+
+        return $count > 0 ? [['dayid' => 0, 'count' => $count, 'nameOrder' => true]] : [];
+    }
+
+    /**
+     * Get the files of the flat listing sorted by name.
+     *
+     * The caller must only request the pseudo-day id 0 (see getFlatDays).
+     *
+     * @param bool  $recursive       If the query should be recursive
+     * @param bool  $archive         If the query should include only the archive folder
+     * @param bool  $hidden          If the query should include hidden files
+     * @param bool  $desc            If the files should be sorted descending
+     * @param array $queryTransforms The query transformations to apply
+     *
+     * @return array An array of photos
+     */
+    public function getFlatDay(
+        bool $recursive,
+        bool $archive,
+        bool $hidden,
+        bool $desc,
+        array $queryTransforms = [],
+    ): array {
+        // Make new query
+        $query = $this->connection->getQueryBuilder();
+
+        // We don't actually use m.datetaken here, but postgres
+        // needs that all fields in ORDER BY are also in SELECT
+        // when using DISTINCT on selected fields
+        $query->select(SQL::distinct($query, 'm.fileid'), ...TimelineQuery::TIMELINE_SELECT)
+            ->from('memories', 'm')
+        ;
+
+        // Add hidden field
+        if ($hidden) {
+            $hSq = $this->connection->getQueryBuilder();
+            $hSq->select($hSq->expr()->literal(1))
+                ->from('cte_folders', 'cte_f')
+                ->andWhere($hSq->expr()->eq('cte_f.fileid', 'f.parent'))
+                ->andWhere($hSq->expr()->eq('cte_f.hidden', SQL::literal($hSq, 1, \PDO::PARAM_INT)))
+            ;
+            $query->selectAlias(SQL::subquery($query, $hSq), 'hidden');
+        }
+
+        // JOIN with mimetypes to get the mimetype
+        $query->join('f', 'mimetypes', 'mimetypes', $query->expr()->eq('f.mimetype', 'mimetypes.id'));
+
+        // Add favorite field
+        $this->addFavoriteTag($query);
+
+        // Group and sort by file name
+        $query->addOrderBy('basename', $desc ? 'DESC' : 'ASC');
+        $query->addOrderBy('m.fileid', 'DESC'); // unique tie-breaker
+
+        // Apply all transformations
+        $this->applyAllTransforms($queryTransforms, $query, false);
+
+        // JOIN with filecache to get the basename etc
+        $query->innerJoin('m', 'filecache', 'f', $query->expr()->eq('m.fileid', 'f.fileid'));
+
+        // Filter for files in the timeline path
+        $query = $this->filterFilecache($query, null, $recursive, $archive, $hidden);
+
+        // FETCH all photos
+        $photos = $this->executeQueryWithCTEs($query)->fetchAll();
+
+        // Post process the photos in-place
+        foreach ($photos as &$photo) {
+            $this->postProcessDayPhoto($photo);
+        }
+
+        return $photos;
+    }
+
+    /**
      * Inner join with oc_filecache.
      *
      * @param IQueryBuilder $query     Query builder
